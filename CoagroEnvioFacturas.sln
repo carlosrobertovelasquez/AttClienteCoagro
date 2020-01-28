@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.28307.645
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CoagroEnvioFacturas", "CoagroEnvioFacturas\CoagroEnvioFacturas.csproj", "{949CD6A3-44D1-4335-A869-B68EF55C1E6E}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Default = Debug|Default
+		Release|Default = Release|Default
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{949CD6A3-44D1-4335-A869-B68EF55C1E6E}.Debug|Default.ActiveCfg = Debug|Any CPU
+		{949CD6A3-44D1-4335-A869-B68EF55C1E6E}.Debug|Default.Build.0 = Debug|Any CPU
+		{949CD6A3-44D1-4335-A869-B68EF55C1E6E}.Release|Default.ActiveCfg = Release|Any CPU
+		{949CD6A3-44D1-4335-A869-B68EF55C1E6E}.Release|Default.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {85CB472E-FB9B-47D3-9E9D-C1440894DD05}
+	EndGlobalSection
+EndGlobal
