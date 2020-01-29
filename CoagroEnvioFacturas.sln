@@ -5,6 +5,8 @@ VisualStudioVersion = 15.0.28307.645
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CoagroEnvioFacturas", "CoagroEnvioFacturas\CoagroEnvioFacturas.csproj", "{949CD6A3-44D1-4335-A869-B68EF55C1E6E}"
 EndProject
+Project("{54435603-DBB4-11D2-8724-00A0C9A8B90C}") = "InstalladorCoagroEnvioFacturas", "InstalladorCoagroEnvioFacturas\InstalladorCoagroEnvioFacturas.vdproj", "{B84571A1-0970-47F5-B682-2F2DD5B1EC71}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Default = Debug|Default
@@ -15,6 +17,8 @@ Global
 		{949CD6A3-44D1-4335-A869-B68EF55C1E6E}.Debug|Default.Build.0 = Debug|Any CPU
 		{949CD6A3-44D1-4335-A869-B68EF55C1E6E}.Release|Default.ActiveCfg = Release|Any CPU
 		{949CD6A3-44D1-4335-A869-B68EF55C1E6E}.Release|Default.Build.0 = Release|Any CPU
+		{B84571A1-0970-47F5-B682-2F2DD5B1EC71}.Debug|Default.ActiveCfg = Debug
+		{B84571A1-0970-47F5-B682-2F2DD5B1EC71}.Release|Default.ActiveCfg = Release
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
