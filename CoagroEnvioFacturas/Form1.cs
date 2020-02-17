@@ -96,7 +96,7 @@ namespace CoagroEnvioFacturas
             // AQUI TENDRIAMOS QUE BOORAR
             if (blBandera) return;
 
-        //    ProcesarTarea();
+           ProcesarTarea();
             borrarArchivo();
             EnviarDocVencidosTDias();
             EnviarDocVencidosJueves();
