@@ -8,7 +8,6 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Configuration;
-using System.Data;
 using System.Data.SqlClient;
 using CrystalDecisions.CrystalReports;
 using CrystalDecisions.CrystalReports.Engine;
@@ -19,21 +18,25 @@ using System.Diagnostics;
 using System.Xml;
 using CoagroEnvioFacturas.APITIGO;
 using System.IO;
+using CrystalDecisions;
+using System.Globalization;
 
 namespace CoagroEnvioFacturas
 {
     public partial class FrmPrincipal : Form
     {
+       
+
         static readonly string rootFolder = @"C:\CoagroAttCliente\Envio";
         bool blBandera = false;
         public FrmPrincipal()
         {
             InitializeComponent();
-            if (!System.Diagnostics.EventLog.SourceExists("MySource"))
+            if (!System.Diagnostics.EventLog.SourceExists("CoagroEnvioFacturas"))
             {
-                System.Diagnostics.EventLog.CreateEventSource("MySource", "MyNewLog");
+                System.Diagnostics.EventLog.CreateEventSource("CoagroEnvioFacturas", "MyNewLog");
             }
-            eventLog1.Source = "MySource";
+            eventLog1.Source = "CoagroEnvioFacturas";
             eventLog1.Log = "MyNewLog";
         }
 
@@ -89,29 +92,40 @@ namespace CoagroEnvioFacturas
         private void stLapso_Tick(object sender, EventArgs e)
         {
 
+
             // AQUI TENDRIAMOS QUE BOORAR
-          
-           
+            if (blBandera) return;
+
+        //    ProcesarTarea();
+            borrarArchivo();
+            EnviarDocVencidosTDias();
+            EnviarDocVencidosJueves();
+            EnviarPagos();
+            blBandera = false;
+
+
+        }
+        private void ProcesarTarea()
+        {
             eventLog1.WriteEntry("Ingreso a Time de Cinco Minutos");
             SqlConnection cn = new SqlConnection(ConfigurationManager.ConnectionStrings["sConexion"].ToString());
+
+
+            //IList<CoagroAttCliente> coagroAttClientes = new List<CoagroAttCliente>();
+            string connectionString = ConfigurationManager.ConnectionStrings["sConexion"].ToString();
+            SqlConnection conn = new SqlConnection(connectionString);
+            string sql = @"select * from CINCOH.CoagroAttCliente where EnvioCorreo='N' and EnvioMensajetigo='N' and EnvioEstadocuenta='N' and Procesado='N' and modulo='NEWFACT' ";
+            SqlCommand command = new SqlCommand(sql, conn);
+            conn.Open();
             try
             {
-                using (var adaptador = new SqlDataAdapter("select * from CINCOH.CoagroAttCliente where EnvioCorreo='N' and EnvioMensajetigo='N' and EnvioEstadocuenta='N' and Procesado='N' ", cn))
+                blBandera = true;
+                SqlDataReader reader = command.ExecuteReader();
+                while (reader.Read())
                 {
-                    DataTable tabla = new DataTable();
-                    DataSet ds = new DataSet();
-                    adaptador.SelectCommand.CommandType = CommandType.Text;
-                    adaptador.Fill(tabla);
+                    var doc = reader[0].ToString();
 
-                    //Recorregos los registros que cumplen con el filtro estipulado de la tabla
-                    for (int i = 0; i < tabla.Rows.Count; i++)
-                    {
-                        //Caturamos la factura y consultadomos los datos para enviarlos por correo siempre validado
-                        //que el cliente tenga telefono,correo y acete las variables segun el envio
-                        //en el maestro de cliente tabla cliente tiene que existir correo,numerocelular y variables que
-                        //estene es estado S para envio de correo estado de cuentas factura y mensajes por celular
-                        var doc = tabla.Rows[i]["FACTURA"].ToString();
-                        using (var ada = new SqlDataAdapter(@"SELECT FA.CLIENTE,  FA.FACTURA,FA.EMBARCAR_A,FA.NOMBRE_CLIENTE,FA.TOTAL_FACTURA,FA.ANULADA,
+                    using (var ada = new SqlDataAdapter(@"SELECT FA.CLIENTE,  FA.FACTURA,FA.EMBARCAR_A,FA.NOMBRE_CLIENTE,FA.TOTAL_FACTURA,FA.ANULADA,
                                                                 TIP.TIPO,TIP.SUBTIPO, 
                                                                 CASE WHEN (TIP.DESCRIPCION like '%Cons Int Propia%') THEN 'FAC' 
                                                                 WHEN (TIP.DESCRIPCION like '%Cont Contribuyente%') THEN 'CCF' 
@@ -134,107 +148,91 @@ namespace CoagroEnvioFacturas
                                                                 FA.SUBTIPO_DOC_CXC=TIP.SUBTIPO and
                                                                 TIP.SUBTIPO in(4,5) and
                                                                 FA.VENDEDOR=VE.VENDEDOR and 
-                                                                FA.TIPO_DOCUMENTO='F' AND FA.FACTURA=@doc", cn))                            
+                                                                FA.TIPO_DOCUMENTO='F' AND FA.FACTURA=@doc", cn))
+                    {
+                        DataTable tabla2 = new DataTable();
+                        ada.SelectCommand.Parameters.AddWithValue("@doc", doc);
+                        ada.SelectCommand.CommandType = CommandType.Text;
+                        ada.Fill(tabla2);
+                        for (int y = 0; y < tabla2.Rows.Count; y++)
                         {
-                            DataTable tabla2 = new DataTable();
-                            ada.SelectCommand.Parameters.AddWithValue("@doc", doc);
-                            ada.SelectCommand.CommandType = CommandType.Text;
-                            ada.Fill(tabla2);
-                            //Recorreremos el cliente y validar su cindiciones
-                            //1 tiene correo
-                            //Tiene celular
-                            //estatus de variable enviarcorreo
-                            //estatus de variable enviarfactura
-                            //estatus de variable enviaresatdocuenta
-                            //estatus de variable enviarmensajes
-                            for (int y = 0; y < tabla2.Rows.Count; y++)
+                            if (tabla2.Rows[y]["ENVIARFACTURA"].ToString() == "S")
                             {
-                                if (tabla2.Rows[y]["ENVIARFACTURA"].ToString() == "S")
+                                var _factura = tabla2.Rows[y]["FACTURA"].ToString();
+                                var _tipodoc = tabla2.Rows[y]["TIPODOC"].ToString();
+                                EnviarFactura(_factura, _tipodoc);
+                            }
+                            if (tabla2.Rows[y]["ENVIARESTADOCUENTA"].ToString() == "S")
+                            {
+                                var _cliente = tabla2.Rows[y]["CLIENTE"].ToString();
+                                var _factura = tabla2.Rows[y]["FACTURA"].ToString();
+                                EnviarEstadoCuenta(_cliente, _factura);
+                            }
+                            if (tabla2.Rows[y]["E_MAIL"].ToString() != null && tabla2.Rows[y]["ENVIARCORREO"].ToString() == "S")
+                            {
+                                //Enviamos Correo Eletronico
+                                var _correo = tabla2.Rows[y]["E_MAIL"].ToString();
+                                var _nombre = tabla2.Rows[y]["EMBARCAR_A"].ToString();
+                                var _factura = tabla2.Rows[y]["FACTURA"].ToString();
+                                var _enviarfactura = tabla2.Rows[y]["ENVIARFACTURA"].ToString();
+                                var _enviarestadocuenta = tabla2.Rows[y]["ENVIARESTADOCUENTA"].ToString();
+                                var _totalmercaderia = string.Format("{0:#.##}", tabla2.Rows[y]["TOTAL_FACTURA"]);
+                                var _correovendedor = tabla2.Rows[y]["CORREOVENDEDOR"].ToString();
+                                //var _factura = tabla2.Rows[y]["FACTURA"].ToString();
+
+
+                                EnviarCorreo(_correo, _nombre, _factura, _totalmercaderia, _enviarfactura, _enviarestadocuenta, _correovendedor);
+                            }
+                            else
+                            {
+                                //solo enviarmos datos al vendedor factura y estado de cuentas
+                                var _correo = "N";
+                                var _nombre = tabla2.Rows[y]["EMBARCAR_A"].ToString();
+                                var _factura = tabla2.Rows[y]["FACTURA"].ToString();
+                                var _enviarfactura = tabla2.Rows[y]["ENVIARFACTURA"].ToString();
+                                var _enviarestadocuenta = tabla2.Rows[y]["ENVIARESTADOCUENTA"].ToString();
+                                var _totalmercaderia = string.Format("{0:#.##}", tabla2.Rows[y]["TOTAL_FACTURA"]);
+                                var _correovendedor = tabla2.Rows[y]["CORREOVENDEDOR"].ToString();
+                                var _tipodoc = tabla2.Rows[y]["TIPODOC"].ToString();
+                                if (tabla2.Rows[y]["ENVIARFACTURA"].ToString() == "N" || tabla2.Rows[y]["ENVIARFACTURA"].ToString() == null || tabla2.Rows[y]["ENVIARFACTURA"].ToString() == "")
                                 {
-                                    var _factura = tabla2.Rows[y]["FACTURA"].ToString();
-                                    var _tipodoc = tabla2.Rows[y]["TIPODOC"].ToString();
                                     EnviarFactura(_factura, _tipodoc);
                                 }
-                                if (tabla2.Rows[y]["ENVIARESTADOCUENTA"].ToString() == "S")
+                                if (tabla2.Rows[y]["ENVIARESTADOCUENTA"].ToString() == "N" || tabla2.Rows[y]["ENVIARFACTURA"].ToString() == null || tabla2.Rows[y]["ENVIARFACTURA"].ToString() == "")
                                 {
                                     var _cliente = tabla2.Rows[y]["CLIENTE"].ToString();
-                                    var _factura = tabla2.Rows[y]["FACTURA"].ToString();
-                                    EnviarEstadoCuenta(_cliente, _factura);
-                                }
-                                if (tabla2.Rows[y]["E_MAIL"].ToString() != null && tabla2.Rows[y]["ENVIARCORREO"].ToString() == "S")
-                                {
-                                    //Enviamos Correo Eletronico
-                                    var _correo = tabla2.Rows[y]["E_MAIL"].ToString();
-                                    var _nombre = tabla2.Rows[y]["EMBARCAR_A"].ToString();
-                                    var _factura = tabla2.Rows[y]["FACTURA"].ToString();
-                                    var _enviarfactura = tabla2.Rows[y]["ENVIARFACTURA"].ToString();
-                                    var _enviarestadocuenta = tabla2.Rows[y]["ENVIARESTADOCUENTA"].ToString();
-                                    var _totalmercaderia = string.Format("{0:#.##}", tabla2.Rows[y]["TOTAL_FACTURA"]);
-                                    var _correovendedor = tabla2.Rows[y]["CORREOVENDEDOR"].ToString();
                                     //var _factura = tabla2.Rows[y]["FACTURA"].ToString();
 
-
-                                    EnviarCorreo(_correo, _nombre, _factura, _totalmercaderia, _enviarfactura, _enviarestadocuenta, _correovendedor);
+                                    EnviarEstadoCuenta(_cliente, _factura);
                                 }
-                                else
-                                {
-                                    //solo enviarmos datos al vendedor factura y estado de cuentas
-                                    var _correo = "N";
-                                    var _nombre = tabla2.Rows[y]["EMBARCAR_A"].ToString();
-                                    var _factura = tabla2.Rows[y]["FACTURA"].ToString();
-                                    var _enviarfactura = tabla2.Rows[y]["ENVIARFACTURA"].ToString();
-                                    var _enviarestadocuenta = tabla2.Rows[y]["ENVIARESTADOCUENTA"].ToString();
-                                    var _totalmercaderia = string.Format("{0:#.##}", tabla2.Rows[y]["TOTAL_FACTURA"]);
-                                    var _correovendedor = tabla2.Rows[y]["CORREOVENDEDOR"].ToString();
-                                    var _tipodoc = tabla2.Rows[y]["TIPODOC"].ToString();
-                                    if (tabla2.Rows[y]["ENVIARFACTURA"].ToString() == "N" || tabla2.Rows[y]["ENVIARFACTURA"].ToString() == null || tabla2.Rows[y]["ENVIARFACTURA"].ToString() == "")
-                                    {
-                                        EnviarFactura(_factura, _tipodoc);
-                                    }
-                                    if (tabla2.Rows[y]["ENVIARESTADOCUENTA"].ToString() == "N" || tabla2.Rows[y]["ENVIARFACTURA"].ToString() == null || tabla2.Rows[y]["ENVIARFACTURA"].ToString() == "")
-                                    {
-                                        var _cliente = tabla2.Rows[y]["CLIENTE"].ToString();
-                                        //var _factura = tabla2.Rows[y]["FACTURA"].ToString();
-
-                                        EnviarEstadoCuenta(_cliente, _factura);
-                                    }
-                                    EnviarCorreo(_correo, _nombre, _factura, _totalmercaderia, _enviarfactura, _enviarestadocuenta, _correovendedor);
-                                }
-                                if (tabla2.Rows[y]["ENVIARMENSAJE"].ToString() == "S")
-                                {
-                                    var _factura = tabla2.Rows[y]["FACTURA"].ToString();
-                                    var _enviarmensaje = tabla2.Rows[y]["ENVIARMENSAJE"].ToString();
-                                     EnviarMensajeTigo(_factura,_enviarmensaje);
-                                }
-                                else
-                                {
-                                    var _factura = tabla2.Rows[y]["FACTURA"].ToString();
-                                    var _enviarmensaje = tabla2.Rows[y]["ENVIARMENSAJE"].ToString();
-                                        EnviarMensajeTigo(_factura,_enviarmensaje);
-                                }
-                                var _factura2 = tabla2.Rows[y]["FACTURA"].ToString();
-
-                                System.GC.Collect();
-                                System.GC.WaitForPendingFinalizers();
-                                string EstadoCuentas = @"C:\CoagroAttCliente\Envio\" + "EC_" + _factura2 + ".pdf";
-                                File.Delete(EstadoCuentas);
+                                EnviarCorreo(_correo, _nombre, _factura, _totalmercaderia, _enviarfactura, _enviarestadocuenta, _correovendedor);
                             }
+                            if (tabla2.Rows[y]["ENVIARMENSAJE"].ToString() == "S")
+                            {
+                                var _factura = tabla2.Rows[y]["FACTURA"].ToString();
+                                var _enviarmensaje = tabla2.Rows[y]["ENVIARMENSAJE"].ToString();
+                                //////   EnviarMensajeTigo(_factura, _enviarmensaje);
+                            }
+                            else
+                            {
+                                var _factura = tabla2.Rows[y]["FACTURA"].ToString();
+                                var _enviarmensaje = tabla2.Rows[y]["ENVIARMENSAJE"].ToString();
+                                ///// EnviarMensajeTigo(_factura, _enviarmensaje);
+                            }
+                            var _factura2 = tabla2.Rows[y]["FACTURA"].ToString();
 
 
                         }
 
                     }
 
-                    eventLog1.WriteEntry("Se envio Todo sin Problema");
-                    cn.Close();
-                    cn.Dispose();
-                    
-                    
+
                 }
+
             }
-            catch (Exception ex)
+            finally
             {
-                eventLog1.WriteEntry(ex.Message);
+                conn.Close();
             }
         }
         private void EnviarFactura(string _factura,string _tipodoc)
@@ -245,28 +243,36 @@ namespace CoagroEnvioFacturas
             ParameterField paramfied = new ParameterField();
             ParameterFields paramFields = new ParameterFields();
             ParameterDiscreteValue parameterDiscreteValue = new ParameterDiscreteValue();
+            try
+            {
+                if (_tipodoc == "CCF")
+                {
 
-            if (_tipodoc == "CCF")
+                    crRpt.Load(@"C:\CoagroAttCliente\Reportes\CCF.rpt");
+
+                    crRpt.SetParameterValue("@factura", _factura);
+
+                    crRpt.ExportToDisk(ExportFormatType.PortableDocFormat, @"C:\CoagroAttCliente\Envio\" + "DOC_" + _factura + ".pdf");
+                    // System.IO.File.Delete(@"C:\Destino\"+factura+".pdf");
+                    eventLog1.WriteEntry("Enviamos CCF");
+                }
+                if (_tipodoc == "FAC")
+                {
+
+                    crRpt.Load(@"C:\CoagroAttCliente\Reportes\FAC.rpt");
+                    crRpt.SetParameterValue("@factura", _factura);
+                    crRpt.ExportToDisk(ExportFormatType.PortableDocFormat, @"C:\CoagroAttCliente\Envio\" + "DOC_" + _factura + ".pdf");
+                    // System.IO.File.Delete(@"C:\Destino\"+factura+".pdf");
+                    eventLog1.WriteEntry("Enviamos Factura");
+                }
+
+            }
+            catch (Exception ex)
             {
 
-                crRpt.Load(@"C:\CoagroAttCliente\Reportes\CCF.rpt");
+                eventLog1.WriteEntry(ex.Message);
+            }
             
-                crRpt.SetParameterValue("@factura", _factura);
-
-                crRpt.ExportToDisk(CrystalDecisions.Shared.ExportFormatType.PortableDocFormat, @"C:\CoagroAttCliente\Envio\" + "DOC_" + _factura + ".pdf");
-                // System.IO.File.Delete(@"C:\Destino\"+factura+".pdf");
-                eventLog1.WriteEntry("Enviamos CCF");
-            }
-            if (_tipodoc == "FAC")
-            {
-                
-                crRpt.Load(@"C:\CoagroAttCliente\Reportes\FAC.rpt");
-                crRpt.SetParameterValue("@factura", _factura);
-                crRpt.ExportToDisk(CrystalDecisions.Shared.ExportFormatType.PortableDocFormat, @"C:\CoagroAttCliente\Envio\" + "DOC_" + _factura + ".pdf");
-                // System.IO.File.Delete(@"C:\Destino\"+factura+".pdf");
-                eventLog1.WriteEntry("Enviamos Factura");
-            }
-
             
 
             //Actualizamos que se proceso y envio de factura en tabla
@@ -323,6 +329,7 @@ namespace CoagroEnvioFacturas
             System.Net.Mail.MailMessage correo = new System.Net.Mail.MailMessage();
             if (_correo == "N")
             {
+                _correovendedor = "uber.carlosrobertovelasquez@gmail.com";
                 correo.To.Add(_correovendedor);
                 string EstadoCuentas = @"C:\CoagroAttCliente\Envio\" + "EC_" + _factura + ".pdf";
                 correo.Attachments.Add(new System.Net.Mail.Attachment(EstadoCuentas));
@@ -335,10 +342,13 @@ namespace CoagroEnvioFacturas
             {
                 if (ComprobarFormatoEmail(_correo) == false)
                 {
+                   // _correovendedor = "uber.carlosrobertovelasquez@gmail.com";
                     correo.To.Add(_correovendedor);
                 }
                 else
                 {
+                    //_correovendedor = "uber.carlosrobertovelasquez@gmail.com";
+                    //_correo = "carlosrobertovelasquez@gmail.com";
                     correo.To.Add(_correo);
                     correo.CC.Add(_correovendedor);
                 }
@@ -357,13 +367,13 @@ namespace CoagroEnvioFacturas
             //Enviamos archivos adjuntos
             if (_enviarestadocuenta == "S")
             {
-                string EstadoCuentas = @"C:\Users\Public\CoagroAttCliente\Envio\" + "EC_" + _factura + ".pdf";
+                string EstadoCuentas = @"C:\CoagroAttCliente\Envio\" + "EC_" + _factura + ".pdf";
                 correo.Attachments.Add(new System.Net.Mail.Attachment(EstadoCuentas));
             }
 
             if (_enviarfactura == "S")
             {
-                string factura = @"C:\Users\Public\CoagroAttCliente\Envio\" + "DOC_" + _factura + ".pdf";
+                string factura = @"C:\CoagroAttCliente\Envio\" + "DOC_" + _factura + ".pdf";
                 correo.Attachments.Add(new System.Net.Mail.Attachment(factura));
 
             }
@@ -378,7 +388,7 @@ namespace CoagroEnvioFacturas
             // htmlBody = _factura;
             htmlBody = @"<html><body><p>Estimados Señores " + _nombre + " ,</p>" +
                 "<p> Reciba un Cordial saludo de parte de Comercial Agropecuaria S.A. de C.V " +
-                "<br> Aprobechamos para agradecerle por la compra de nuestros productos agropecuarios.</br> " +
+                "<br> Aprovechamos para agradecerle por la compra de nuestros productos agropecuarios.</br> " +
                 "<br>El numero de Documento es " + _factura + " , con un monto de $" + _totalmercaderia + ". </br></p>" +
                 "<p>Atentamente Coagro S.A. de C.V ,</P><P> Nota :Adjunto al correo podrá encontar Documento y Estado de Cuentas " +
                 "</p> <footer><h4>Mensaje automático, por favor no responder. </h4>" +
@@ -388,7 +398,7 @@ namespace CoagroEnvioFacturas
             correo.Body = htmlBody;
             correo.From = new System.Net.Mail.MailAddress("AtecionCliente@coagro.com");
             System.Net.Mail.SmtpClient clienteCorreo = new System.Net.Mail.SmtpClient();
-            clienteCorreo.Credentials = new System.Net.NetworkCredential("bk.coagro@gmail.com", "Houdelot777$");
+            clienteCorreo.Credentials = new System.Net.NetworkCredential("informacion.coagro@gmail.com", "Houdelot777$");
             clienteCorreo.Port = 587;
             clienteCorreo.EnableSsl = true;
             clienteCorreo.Host = "smtp.gmail.com";
@@ -471,10 +481,10 @@ namespace CoagroEnvioFacturas
                             " Emitida El : ",
                             sqlDataReader["fecha"]
                         });
-                        //string numero = "503" + sqlDataReader["TelCli"];
-                        //string numero2 = "503" + sqlDataReader["TelVend"];
-                        string numero = "50373355123";
-                        string numero2 = "50373355123";
+                        string numero = "503" + sqlDataReader["TelCli"];
+                        string numero2 = "503" + sqlDataReader["TelVend"];
+                        //string numero = "50373355123";
+                        //string numero2 = "50373355123";
 
                         wsAPISmsCorp.enviarSMS("COAGRO", "c@gr1hp45", numero, mensaje, "Tigo");
                         wsAPISmsCorp.enviarSMS("COAGRO", "c@gr1hp45", numero2, mensaje2, "Tigo");
@@ -508,8 +518,8 @@ namespace CoagroEnvioFacturas
                             sqlDataReader2["fecha"]
                         });
                         //string numero = "503" + sqlDataReader["TelCli"];
-                        //string numero2 = "503" + sqlDataReader["TelVend"];
-                         string numero2 = "50373355123";
+                        string numero2 = "503" + sqlDataReader2["TelVend"];
+                         //string numero2 = "50373355123";
                         wsAPISmsCorp.enviarSMS("COAGRO", "c@gr1hp45", numero2, mensaje2, "Tigo");
                     }
 
@@ -541,9 +551,9 @@ namespace CoagroEnvioFacturas
                     sqlDataReader3["fecha"]
                     });
                     //string numero = "503" + sqlDataReader["TelCli"];
-                    //string numero2 = "503" + sqlDataReader["TelVend"];
+                    string numero2 = "503" + sqlDataReader3["TelVend"];
 
-                    string numero2 = "50373355123";
+                    //string numero2 = "50373355123";
 
                     // wsAPISmsCorp.enviarSMS("COAGRO", "c@gr1hp45", numero, mensaje, "Tigo");
                     wsAPISmsCorp.enviarSMS("COAGRO", "c@gr1hp45", numero2, mensaje2, "Tigo");
@@ -594,5 +604,290 @@ namespace CoagroEnvioFacturas
                 return false;
             }
         }
+        private void borrarArchivo()
+        {
+            string Directorio = @"C:\CoagroAttCliente\Envio";
+            int HorasLimite = 1;
+            foreach (var item in Directory.GetDirectories(Directorio))
+            {
+                if (new DirectoryInfo(item).CreationTime.Add(TimeSpan.FromHours(HorasLimite))<DateTime.Now)
+                {
+                    Directory.Delete(item, true);
+                }
+            }
+        }
+        private void EnviarDocVencidosTDias()
+        {
+            //Revisamos si son las 9:00 am
+            //
+
+            DateTime hoy = DateTime.Now;
+            string dia = hoy.ToString("dddd");
+            int hora = Convert.ToInt32(hoy.ToString("HH"));
+            //Console.WriteLine((int)dateValue.DayOfWeek);
+
+
+            if (hoy.Hour == 10 && hoy.Minute >=0)
+            {
+
+                
+                string connectionString = ConfigurationManager.ConnectionStrings["sConexion"].ToString();
+                SqlConnection conn = new SqlConnection(connectionString);
+                string sql = @"SELECT DOC.DOCUMENTO,DOC.CLIENTE,CLI.NOMBRE,CLI.TELEFONO2,CLI.E_MAIL, DOC.FECHA,DOC.FECHA_VENCE, DOC.MONTO,DOC.SALDO ,DOC.VENDEDOR,VEN.E_MAIL,doc.SUBTIPO,
+										CASE WHEN (sub.DESCRIPCION like '%Cons Int Propia%') THEN 'FAC' 
+                                        WHEN (sub.DESCRIPCION like '%Cont Contribuyente%') THEN 'CCF' 
+										 WHEN (sub.DESCRIPCION like 'Cons Int Ticket%') THEN 'TIK' end as TIPODOC
+							FROM 
+                            CINCOH.DOCUMENTOS_CC DOC,
+                            CINCOH.CLIENTE CLI,
+                            CINCOH.VENDEDOR VEN,
+							CINCOH.SUBTIPO_DOC_CC sub
+                            WHERE  
+							doc.SUBTIPO=sub.SUBTIPO and
+							sub.TIPO='FAC' and
+                            DOC.CLIENTE_ORIGEN=CLI.CLIENTE AND
+                            DOC.VENDEDOR=VEN.VENDEDOR AND
+                            DAY(DOC.FECHA_VENCE)=DAY(GETDATE()) AND 
+                            MONTH(DOC.FECHA_VENCE)=MONTH(GETDATE()) AND 
+                            YEAR(DOC.FECHA_VENCE)=YEAR(GETDATE()) AND 
+                            DOC.TIPO='FAC' AND 
+                            DOC.SALDO>0 AND
+                            DOC.DOCUMENTO  NOT IN (SELECT Factura FROM CINCOH.CoagroAttCliente WHERE Modulo='FA_VENCIDA' )
+                            ORDER BY DOC.CLIENTE";
+                SqlCommand command = new SqlCommand(sql, conn);
+                conn.Open();
+                try
+                {
+                    SqlDataReader reader = command.ExecuteReader();
+                    while (reader.Read())
+                    {
+                        //Revisamos datos por cada cliente y enviamos correo y mensaje al cliente y vendedor
+                        string _doc = reader[0].ToString();
+                        string _cliente = reader[1].ToString();
+                        string _nombre = reader[2].ToString();
+                        string _telefono2 = reader[3].ToString();
+                        string _email = reader[4].ToString();
+                        DateTime _fecha = Convert.ToDateTime( reader[5]);
+                        DateTime _fechaVence = Convert.ToDateTime(reader[6]);
+                        var  _monto = string.Format("{0:#.##}", reader[7]);
+                        var _saldo = string.Format("{0:#.##}", reader[8]);
+                        
+                        string _vendedor = reader[9].ToString();
+                        string _emailvendedor = reader[10].ToString();
+                        string _tipodoc = reader[12].ToString();
+                        //Enviamos Correo Por documentos Vencidos
+                        EnviarFactura(_doc, _tipodoc);
+                        EnviarEstadoCuenta(_cliente, _doc);
+                         GenerarCorreoDocvencidos(_cliente, _doc, _nombre, _email, _fecha, _fechaVence, _monto, _saldo, _emailvendedor, _tipodoc);
+                     
+                        
+                        
+
+                    }
+
+                }
+                catch (Exception)
+                {
+
+                    throw;
+                }
+                finally
+                {
+                    conn.Close();
+                }
+            }
+        }
+        private void GenerarCorreoDocvencidos(string _cliente, string _doc, string _nombre, string _email, DateTime _fecha,DateTime _fechaVence, string _monto, string _saldo,string _emailvendedor,string _tipodoc)
+        {
+
+            eventLog1.WriteEntry("Proceso de Envio de Correo");
+            string correoexiste = "EXISTE";
+          
+
+            //borramos registros 7 dias
+
+
+            //   System.IO.File.Delete(@"C:\Destino\" + "DOC_" + _factura + ".pdf");
+
+            string Nfactura = _doc;
+            System.Net.Mail.MailMessage correo = new System.Net.Mail.MailMessage();
+            if (_email ==null)
+            {
+                _emailvendedor = "uber.carlosrobertovelasquez@gmail.com";
+                correo.To.Add(_emailvendedor);
+                string EstadoCuentas = @"C:\CoagroAttCliente\Envio\" + "EC_" + _doc + ".pdf";
+                correo.Attachments.Add(new System.Net.Mail.Attachment(EstadoCuentas));
+                string factura = @"C:\CoagroAttCliente\Envio\" + "DOC_" + _doc + ".pdf";
+                correo.Attachments.Add(new System.Net.Mail.Attachment(factura));
+                correoexiste = "NOEXISTE";
+
+            }
+            else
+            {
+                if (ComprobarFormatoEmail(_email) == false)
+                {
+                    _emailvendedor = "uber.carlosrobertovelasquez@gmail.com";
+                    correo.To.Add(_emailvendedor);
+                 //   correo.CC.Add("lh@coagro.com");
+                }
+                else
+                {
+                    _emailvendedor = "uber.carlosrobertovelasquez@gmail.com";
+                    _email = "carlosrobertovelasquez@gmail.com";
+                    correo.To.Add(_email);
+                    correo.CC.Add(_emailvendedor);
+                }
+
+                  string EstadoCuentas = @"C:\CoagroAttCliente\Envio\" + "EC_" + _doc + ".pdf";
+                  correo.Attachments.Add(new System.Net.Mail.Attachment(EstadoCuentas));
+                  string factura = @"C:\CoagroAttCliente\Envio\" + "DOC_" + _doc + ".pdf";
+                  correo.Attachments.Add(new System.Net.Mail.Attachment(factura));
+
+                correoexiste = "EXISTE";
+            }
+            correo.Subject = "Envio de Factura " + " " + _doc;
+            correo.SubjectEncoding = System.Text.Encoding.UTF8;
+
+
+            //Enviamos archivos adjuntos
+          //      string EstadoCuentas = @"C:\CoagroAttCliente\Envio\" + "EC_" + _doc + ".pdf";
+            //    correo.Attachments.Add(new System.Net.Mail.Attachment(EstadoCuentas));
+            
+                                                         
+
+            correo.BodyEncoding = System.Text.Encoding.UTF8;
+            correo.IsBodyHtml = true;
+            string htmlBody;
+            // htmlBody = _factura;
+            htmlBody = @"<html><body><p>Estimados Señores " + _nombre + " ,</p>" +
+                "<p> Reciba un Cordial saludo de parte de Comercial Agropecuaria S.A. de C.V " +
+                "<br> Le informamos que este dia se vence</br> " +
+                "<br>El Documento Con Numero : " + _doc + " , con un Saldo de $" + _saldo + ". </br></p>" +
+                "<p>Atentamente Coagro S.A. de C.V ,</P><P> Nota :Adjunto al correo podrá encontar Documento y Estado de Cuentas " +
+                "</p> <footer><h4>Este es un Documento generado de forma automatica.Agradecemos no responder a esta direccion de correo </h4>" +
+                "<h4>Si ya realizó el pago respectivo, por favor hacer caso omiso.</4> " +
+                "<h4> Nuestras Redes Sociales:</4> " +
+                "<a href='https://www.facebook.com/ComercialAgropecuaria'>Facebook </a>" +
+                "<a href='https://www.coagro.com'> , www.cogaro.com</a>" +
+                "</footer>" +
+                "</body></html>";
+            correo.Body = htmlBody;
+            correo.From = new System.Net.Mail.MailAddress("AtecionCliente@coagro.com");
+            System.Net.Mail.SmtpClient clienteCorreo = new System.Net.Mail.SmtpClient();
+            clienteCorreo.Credentials = new System.Net.NetworkCredential("informacion.coagro@gmail.com", "Houdelot777$");
+            clienteCorreo.Port = 587;
+            clienteCorreo.EnableSsl = true;
+            clienteCorreo.Host = "smtp.gmail.com";
+
+
+            try
+            {
+                blBandera = true;
+                eventLog1.WriteEntry("Se inicio proceso de envio de Informacion", EventLogEntryType.Information);
+
+                clienteCorreo.Send(correo);
+                SqlConnection cn = new SqlConnection(ConfigurationManager.ConnectionStrings["sConexion"].ToString());
+                using (var ada = new SqlDataAdapter("insert into CINCOH.CoagroAttCliente (factura,FechaRegistro,procesado,Modulo) VALUES(@factura,@FechaRegistro,@procesado,@Modulo)", cn))
+                {
+
+                    ada.SelectCommand.Parameters.AddWithValue("@factura", _doc);
+                    ada.SelectCommand.Parameters.AddWithValue("@FechaRegistro", DateTime.Now);
+                    ada.SelectCommand.Parameters.AddWithValue("@procesado", "S");
+                    ada.SelectCommand.Parameters.AddWithValue("@Modulo", "FA_VENCIDA");
+                    ada.SelectCommand.CommandType = CommandType.Text;
+                    cn.Open();
+                    ada.SelectCommand.ExecuteNonQuery();
+                    cn.Close();
+                }
+
+
+
+
+            }
+            catch (Exception ex)
+            {
+
+                eventLog1.WriteEntry(ex.Message, EventLogEntryType.Error);
+            }
+
+            eventLog1.WriteEntry("Se Envio sin problemas el correo", EventLogEntryType.Information);
+
+
+
+
+
+           
+        }
+        private void EnviarDocVencidosJueves()
+        {
+            // Revisamos si es dia jueves y 9.30 am
+
+            if (true)
+            {
+               
+            }
+        }
+        private void EnviarPagos()
+        {
+            //Revisamos si se ha insertado un nuevo pago en la tabla CoagroAttCliente que venga de Auxiliar CC y que tenga un tipo Deposito o Recibo
+
+            string connectionString = ConfigurationManager.ConnectionStrings["sConexion"].ToString();
+            SqlConnection conn = new SqlConnection(connectionString);
+            string sql = @"select aux.FECHA,aux.DEBITO as NumFactura, doc.monto as MontoFactura, aux.CREDITO as NumRecibo,aux.MONTO_CREDITO as MontoRecibo ,doc.SALDO,cli.ALIAS,cli.E_MAIL,cli.TELEFONO2,ven.E_MAIL as correovendedor,ven.telefono as telefonovendedor from 
+                            CINCOH.AUXILIAR_CC aux,
+                            CINCOH.DOCUMENTOS_CC doc,
+                            CINCOH.cliente cli,
+                            CINCOH.VENDEDOR ven	 
+                            where 
+                            doc.CLIENTE_ORIGEN=cli.CLIENTE and
+                            aux.DEBITO=doc.DOCUMENTO and
+                            doc.VENDEDOR=ven.VENDEDOR and
+                            aux.TIPO_CREDITO in ('DEP','REC')  and 
+                            aux.CREDITO  in(select recibo from CINCOH.CoagroAttCliente where modulo='NEWPAGO' and Procesado='N')";
+            SqlCommand command = new SqlCommand(sql, conn);
+            conn.Open();
+            try
+            {
+                SqlDataReader reader = command.ExecuteReader();
+                while (reader.Read())
+                {
+                    //Revisamos datos por cada cliente y enviamos correo y mensaje al cliente y vendedor
+                    string _doc = reader[0].ToString();
+                    string _cliente = reader[1].ToString();
+                    string _nombre = reader[2].ToString();
+                    string _telefono2 = reader[3].ToString();
+                    string _email = reader[4].ToString();
+                    DateTime _fecha = Convert.ToDateTime(reader[5]);
+                    DateTime _fechaVence = Convert.ToDateTime(reader[6]);
+                    var _monto = string.Format("{0:#.##}", reader[7]);
+                    var _saldo = string.Format("{0:#.##}", reader[8]);
+
+                    string _vendedor = reader[9].ToString();
+                    string _emailvendedor = reader[10].ToString();
+                    string _tipodoc = reader[12].ToString();
+                    //Enviamos Correo Por documentos Vencidos
+                    EnviarFactura(_doc, _tipodoc);
+                    EnviarEstadoCuenta(_cliente, _doc);
+                    GenerarCorreoDocvencidos(_cliente, _doc, _nombre, _email, _fecha, _fechaVence, _monto, _saldo, _emailvendedor, _tipodoc);
+
+
+
+
+                }
+
+            }
+            catch (Exception)
+            {
+
+                throw;
+            }
+            finally
+            {
+                conn.Close();
+            }
+
+
+        }
+
     }
 }

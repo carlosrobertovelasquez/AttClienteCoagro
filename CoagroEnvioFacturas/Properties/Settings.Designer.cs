@@ -43,5 +43,16 @@ namespace CoagroEnvioFacturas.Properties {
                 return ((string)(this["CoagroEnvioFacturas_sv_com_tigo_smscorp_wsAPISmsCorp"]));
             }
         }
+        
+        [global::System.Configuration.ApplicationScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.SpecialSettingAttribute(global::System.Configuration.SpecialSetting.ConnectionString)]
+        [global::System.Configuration.DefaultSettingValueAttribute("Data Source=PELAZON;Initial Catalog=COAGRO2;Persist Security Info=True;User ID=sa" +
+            ";Password=Houdelot777$")]
+        public string sConexion2 {
+            get {
+                return ((string)(this["sConexion2"]));
+            }
+        }
     }
 }
