@@ -99,7 +99,7 @@
             // stLapso
             // 
             this.stLapso.Enabled = true;
-            this.stLapso.Interval = 120000;
+            this.stLapso.Interval = 480000;
             this.stLapso.Tick += new System.EventHandler(this.stLapso_Tick);
             // 
             // eventLog1
